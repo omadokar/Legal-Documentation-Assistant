@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI-Powered Legal Documentation Assistant</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 600px;
+            background: white;
+            padding: 20px;
+            box-shadow: 0px 0px 10px #aaa;
+            margin: auto;
+        }
+
+        .upload-section,
+        .actions,
+        .output {
+            margin: 20px 0;
+        }
+
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px;
+            cursor: pointer;
+            margin: 5px;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        select {
+            padding: 8px;
+            margin-left: 5px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+        <h1>AI-Powered Legal Documentation Assistant</h1>
+
+        <!-- Upload Document Section -->
+        <div class="upload-section">
+            <input type="file" id="fileInput">
+            <button onclick="uploadFile()">Upload Document</button>
+            <p id="uploadStatus"></p>
+        </div>
+
+        <!-- Actions Section -->
+        <div class="actions">
+            <button onclick="checkLegal()">Check Legal</button>
+            <button onclick="summarizeText()">Summarize</button>
+            <button onclick="translateText()">Translate</button>
+            <select id="languageSelect">
+                <option value="en">English</option>
+                <option value="hi">Hindi</option>
+                <option value="mr">Marathi</option>
+            </select>
+            <button onclick="generateDocument()">Generate Document</button>
+        </div>
+
+        <!-- Output Section -->
+        <div class="output">
+            <h3>Extracted Text:</h3>
+            <p id="extractedText"></p>
+
+            <h3>Legal Check:</h3>
+            <p id="legalCheck"></p>
+
+            <h3>Summary:</h3>
+            <p id="summary"></p>
+
+            <h3>Translation:</h3>
+            <p id="translatedText"></p>
+            <button id="downloadTranslatedBtn" style="display:none;" onclick="downloadTranslated()">Download Translated
+                Document</button>
+
+            <h3>Generated Document:</h3>
+            <p id="generatedDocument"></p>
+        </div>
+    </div>
+
+    <script>
+        let documentId = null;
+
+        // Upload File
+        function uploadFile() {
+            let fileInput = document.getElementById("fileInput");
+            let formData = new FormData();
+            formData.append("file", fileInput.files[0]);
+
+            fetch("/upload", {
+                method: "POST",
+                body: formData
+            })
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById("extractedText").innerText = data.text;
+                    documentId = data.document_id;
+                    document.getElementById("uploadStatus").innerText = "File uploaded successfully!";
+                })
+                .catch(error => console.error("Error uploading file:", error));
+        }
+
+        // Check Legal
+        function checkLegal() {
+            if (!documentId) {
+                alert("Please upload a document first!");
+                return;
+            }
+
+            fetch("/check_legal", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ document_id: documentId, text: document.getElementById("extractedText").innerText })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById("legalCheck").innerText = data.is_legal ? "Legal Document" : "Non-Legal Document";
+                })
+                .catch(error => console.error("Error checking legal:", error));
+        }
+
+        // Summarize Text
+        function summarizeText() {
+            if (!documentId) {
+                alert("Please upload a document first!");
+                return;
+            }
+
+            fetch("/summarize", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ document_id: documentId, text: document.getElementById("extractedText").innerText })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById("summary").innerText = data.summary;
+                })
+                .catch(error => console.error("Error summarizing text:", error));
+        }
+
+        // Translate Text
+        function translateText() {
+            if (!documentId) {
+                alert("Please upload a document first!");
+                return;
+            }
+
+            let targetLang = document.getElementById("languageSelect").value;
+
+            fetch("/translate", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ document_id: documentId, text: document.getElementById("extractedText").innerText, lang: targetLang })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById("translatedText").innerText = data.translated_text;
+                    document.getElementById("downloadTranslatedBtn").style.display = "block"; // Show download button
+                })
+                .catch(error => console.error("Error translating text:", error));
+        }
+
+        function downloadTranslated() {
+            if (!documentId) {
+                alert("No translated document available!");
+                return;
+            }
+
+            window.location.href = `/download_translated/${documentId}`;
+        }
+        // Generate Document
+        function generateDocument() {
+            if (!documentId) {
+                alert("Please upload a document first!");
+                return;
+            }
+
+            let inputText = prompt("Enter text to generate document:");
+
+            fetch("/generate_document", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ document_id: documentId, text: inputText })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById("generatedDocument").innerHTML = `<a href="${data.pdf_url}" target="_blank">Download Document</a>`;
+                })
+                .catch(error => console.error("Error generating document:", error));
+        }
+    </script>
+
+</body>
+
+</html>
