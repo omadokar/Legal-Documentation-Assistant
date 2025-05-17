@@ -19,9 +19,8 @@ app = Flask(__name__)
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-uri = f"mongodb+srv://omadokar:ombhushan@cluster0.xmzxkzx.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
-client = MongoClient(uri)
-
+MONGO_URI = os.getenv("MONGODB_URI")  # make sure this matches the name in Render
+client = MongoClient(MONGO_URI)
 # Example usage
 db = client['legal_assistant']
 documents_collection = db['documents']
