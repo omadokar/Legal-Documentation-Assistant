@@ -20,7 +20,7 @@ UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 # ✅ MongoDB Configuration
-client = MongoClient("mongodb://localhost:27017/")
+client = MongoClient("mongodb+srv://omadokar2003:omadokar@cluster0.mongodb.net/legal_assistant?retryWrites=true&w=majority")
 db = client["legal_assistant"]
 documents_collection = db["documents"]
 
