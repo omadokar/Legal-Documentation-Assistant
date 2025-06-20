@@ -2,7 +2,7 @@ from flask import Flask, request, render_template, jsonify, send_file
 import os
 import pdfplumber
 import docx
-from googletrans import Translator
+from deep_translator import GoogleTranslator
 from sumy.parsers.plaintext import PlaintextParser
 from sumy.nlp.tokenizers import Tokenizer
 from sumy.summarizers.lsa import LsaSummarizer
@@ -33,11 +33,9 @@ pdfmetrics.registerFont(TTFont("HindiFont", FONT_PATH_HINDI))
 pdfmetrics.registerFont(TTFont("MarathiFont", FONT_PATH_MARATHI))
 pdfmetrics.registerFont(TTFont("EnglishFont", FONT_PATH_ENGLISH))
 
-
 @app.route("/")
 def index():
     return render_template("index.html")
-
 
 # ✅ Upload File and Extract Text
 @app.route("/upload", methods=["POST"])
@@ -65,7 +63,6 @@ def upload_file():
 
     return jsonify({"text": text, "document_id": document_id})
 
-
 # ✅ Extract Text from PDF/DOCX
 def extract_text(filename):
     if filename.endswith(".pdf"):
@@ -75,7 +72,6 @@ def extract_text(filename):
         doc = docx.Document(filename)
         return "\n".join([para.text for para in doc.paragraphs])
     return ""
-
 
 # ✅ Check if Document is Legal
 @app.route("/check_legal", methods=["POST"])
@@ -93,7 +89,6 @@ def check_legal():
     )
 
     return jsonify({"is_legal": is_legal})
-
 
 # ✅ Summarize Document
 @app.route("/summarize", methods=["POST"])
@@ -113,7 +108,6 @@ def summarize_text():
 
     return jsonify({"summary": summary})
 
-
 # ✅ Translate Document
 @app.route("/translate", methods=["POST"])
 def translate_text():
@@ -122,8 +116,7 @@ def translate_text():
     text = data.get("text")
     target_lang = data.get("lang")
 
-    translator = Translator()
-    translated = translator.translate(text, dest=target_lang).text
+    translated = GoogleTranslator(source="auto", target=target_lang).translate(text)
 
     documents_collection.update_one(
         {"_id": ObjectId(document_id)},
@@ -131,7 +124,6 @@ def translate_text():
     )
 
     return jsonify({"translated_text": translated})
-
 
 # ✅ Generate PDF from Text
 @app.route("/generate_document", methods=["POST"])
@@ -148,7 +140,6 @@ def generate_document():
     )
 
     return jsonify({"File": "Downloaded Successfully."})
-
 
 # ✅ Generate PDF with Proper Formatting
 def generate_pdf(content, document_id):
@@ -167,7 +158,6 @@ def generate_pdf(content, document_id):
     c.save()
     return pdf_path
 
-
 # ✅ Download Generated PDF
 @app.route("/download/<string:document_id>", methods=["GET"])
 def download_document(document_id):
@@ -175,7 +165,6 @@ def download_document(document_id):
     if doc and doc.get("generated_document"):
         return send_file(doc["generated_document"], as_attachment=True)
     return jsonify({"error": "Generated document not found"}), 404
-
 
 # ✅ Download Translated PDF
 @app.route("/download_translated/<string:document_id>", methods=["GET"])
@@ -186,9 +175,7 @@ def download_translated(document_id):
         pdf_path = os.path.join(UPLOAD_FOLDER, f"translated_{document_id}.pdf")
         c = canvas.Canvas(pdf_path, pagesize=letter)
 
-        # You can add font logic based on language here if needed
         c.setFont("EnglishFont", 12)
-
         lines = wrap(translated_text, width=80)
         y = 750
         for line in lines:
@@ -199,7 +186,6 @@ def download_translated(document_id):
         return send_file(pdf_path, as_attachment=True)
 
     return jsonify({"error": "Translated text not found"}), 404
-
 
 # ✅ Run Flask App
 if __name__ == "__main__":
