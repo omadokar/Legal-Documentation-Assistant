@@ -2,7 +2,7 @@ from flask import Flask, request, render_template, jsonify, send_file
 import os
 import pdfplumber
 import docx
-from deep_translator import GoogleTranslator
+from googletrans import Translator
 from sumy.parsers.plaintext import PlaintextParser
 from sumy.nlp.tokenizers import Tokenizer
 from sumy.summarizers.lsa import LsaSummarizer
@@ -10,27 +10,21 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfbase import pdfmetrics
-from sumy.parsers.plaintext import PlaintextParser
-from nltk.tokenize import sent_tokenize
-from sumy.nlp.stemmers import Stemmer
-from sumy.summarizers.lsa import LsaSummarizer
-from sumy.utils import get_stop_words
 from textwrap import wrap
-import firebase_admin
-from firebase_admin import credentials, firestore
+from pymongo import MongoClient
+from bson.objectid import ObjectId
 
-# Initialize Flask App
-
+# ✅ Initialize Flask App
 app = Flask(__name__)
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# Initialize Firebase Admin
-cred = credentials.Certificate("translator-d67f1-firebase-adminsdk-fbsvc-3d0c0c79d8.json")
-firebase_admin.initialize_app(cred)
-db = firestore.client()
+# ✅ MongoDB Configuration
+client = MongoClient("mongodb+srv://omadokar2003:om123456@cluster0.flwjl8t.mongodb.net/legal_assistant?retryWrites=true&w=majority&appName=Cluster0")
+db = client["legal_assistant"]
+documents_collection = db["documents"]
 
-# Register Fonts
+# ✅ Register Unicode Fonts
 FONT_PATH_HINDI = "fonts/Amiko-Regular.ttf"
 FONT_PATH_MARATHI = "fonts/AGRAB.TTF"
 FONT_PATH_ENGLISH = "fonts/DejaVuSans.ttf"
@@ -39,22 +33,13 @@ pdfmetrics.registerFont(TTFont("HindiFont", FONT_PATH_HINDI))
 pdfmetrics.registerFont(TTFont("MarathiFont", FONT_PATH_MARATHI))
 pdfmetrics.registerFont(TTFont("EnglishFont", FONT_PATH_ENGLISH))
 
-LANGUAGE = "english"
-SENTENCES_COUNT = 3
-def summarize_text_with_nltk(text):
-    # Use nltk.sent_tokenize to split sentences
-    sentences = sent_tokenize(text)
-    # Create a PlaintextParser manually with pre-tokenized sentences
-    parser = PlaintextParser.from_sentences(sentences, Stemmer(LANGUAGE))
-    summarizer = LsaSummarizer(Stemmer(LANGUAGE))
-    summarizer.stop_words = get_stop_words(LANGUAGE)
 
-    summary = summarizer(parser.document, SENTENCES_COUNT)
-    return " ".join(str(sentence) for sentence in summary)
 @app.route("/")
 def index():
     return render_template("index.html")
 
+
+# ✅ Upload File and Extract Text
 @app.route("/upload", methods=["POST"])
 def upload_file():
     if "file" not in request.files:
@@ -66,7 +51,7 @@ def upload_file():
 
     text = extract_text(filename)
 
-    doc_ref = db.collection("documents").add({
+    document = {
         "filename": file.filename,
         "file_path": filename,
         "extracted_text": text,
@@ -74,11 +59,14 @@ def upload_file():
         "summary": None,
         "translated_text": None,
         "generated_document": None
-    })
-    document_id = doc_ref[1].id
+    }
+    result = documents_collection.insert_one(document)
+    document_id = str(result.inserted_id)
 
     return jsonify({"text": text, "document_id": document_id})
 
+
+# ✅ Extract Text from PDF/DOCX
 def extract_text(filename):
     if filename.endswith(".pdf"):
         with pdfplumber.open(filename) as pdf:
@@ -88,6 +76,8 @@ def extract_text(filename):
         return "\n".join([para.text for para in doc.paragraphs])
     return ""
 
+
+# ✅ Check if Document is Legal
 @app.route("/check_legal", methods=["POST"])
 def check_legal():
     data = request.json
@@ -97,34 +87,34 @@ def check_legal():
     legal_keywords = ["WHEREAS", "IN WITNESS WHEREOF", "THIS AGREEMENT"]
     is_legal = any(keyword in text for keyword in legal_keywords)
 
-    db.collection("documents").document(document_id).update({"is_legal": is_legal})
+    documents_collection.update_one(
+        {"_id": ObjectId(document_id)},
+        {"$set": {"is_legal": is_legal}}
+    )
+
     return jsonify({"is_legal": is_legal})
 
+
+# ✅ Summarize Document
 @app.route("/summarize", methods=["POST"])
 def summarize_text():
     data = request.json
     document_id = data.get("document_id")
     text = data.get("text")
 
-    if not text or text.strip() == "":
-        return jsonify({"error": "Empty text received for summarization"}), 400
-
     parser = PlaintextParser.from_string(text, Tokenizer("english"))
-    sentence_count = len(parser.document.sentences)
-    print(f"Number of sentences parsed: {sentence_count}")
-
-    if sentence_count == 0:
-        return jsonify({"error": "No sentences found to summarize"}), 400
-
     summarizer = LsaSummarizer()
-    summary_sentences = summarizer(parser.document, min(3, sentence_count))  # Summarize max 3 or less
-    summary = " ".join(str(sentence) for sentence in summary_sentences)
+    summary = " ".join(str(sentence) for sentence in summarizer(parser.document, 3))
 
-    # Save summary in Firestore
-    db.collection("documents").document(document_id).update({"summary": summary})
+    documents_collection.update_one(
+        {"_id": ObjectId(document_id)},
+        {"$set": {"summary": summary}}
+    )
 
     return jsonify({"summary": summary})
 
+
+# ✅ Translate Document
 @app.route("/translate", methods=["POST"])
 def translate_text():
     data = request.json
@@ -132,11 +122,18 @@ def translate_text():
     text = data.get("text")
     target_lang = data.get("lang")
 
-    translated = GoogleTranslator(source='auto', target=target_lang).translate(text)
+    translator = Translator()
+    translated = translator.translate(text, dest=target_lang).text
 
-    db.collection("documents").document(document_id).update({"translated_text": translated})
+    documents_collection.update_one(
+        {"_id": ObjectId(document_id)},
+        {"$set": {"translated_text": translated}}
+    )
+
     return jsonify({"translated_text": translated})
 
+
+# ✅ Generate PDF from Text
 @app.route("/generate_document", methods=["POST"])
 def generate_document():
     data = request.json
@@ -145,9 +142,15 @@ def generate_document():
 
     pdf_path = generate_pdf(content, document_id)
 
-    db.collection("documents").document(document_id).update({"generated_document": pdf_path})
+    documents_collection.update_one(
+        {"_id": ObjectId(document_id)},
+        {"$set": {"generated_document": pdf_path}}
+    )
+
     return jsonify({"File": "Downloaded Successfully."})
 
+
+# ✅ Generate PDF with Proper Formatting
 def generate_pdf(content, document_id):
     pdf_path = os.path.join(UPLOAD_FOLDER, f"generated_{document_id}.pdf")
     c = canvas.Canvas(pdf_path, pagesize=letter)
@@ -164,33 +167,40 @@ def generate_pdf(content, document_id):
     c.save()
     return pdf_path
 
+
+# ✅ Download Generated PDF
 @app.route("/download/<string:document_id>", methods=["GET"])
 def download_document(document_id):
-    doc = db.collection("documents").document(document_id).get()
-    if doc.exists:
-        data = doc.to_dict()
-        if data.get("generated_document"):
-            return send_file(data["generated_document"], as_attachment=True)
+    doc = documents_collection.find_one({"_id": ObjectId(document_id)})
+    if doc and doc.get("generated_document"):
+        return send_file(doc["generated_document"], as_attachment=True)
     return jsonify({"error": "Generated document not found"}), 404
 
+
+# ✅ Download Translated PDF
 @app.route("/download_translated/<string:document_id>", methods=["GET"])
 def download_translated(document_id):
-    doc = db.collection("documents").document(document_id).get()
-    if doc.exists:
-        data = doc.to_dict()
-        if data.get("translated_text"):
-            translated_text = data["translated_text"]
-            pdf_path = os.path.join(UPLOAD_FOLDER, f"translated_{document_id}.pdf")
-            c = canvas.Canvas(pdf_path, pagesize=letter)
-            c.setFont("EnglishFont", 12)
-            lines = wrap(translated_text, width=80)
-            y = 750
-            for line in lines:
-                c.drawString(50, y, line)
-                y -= 20
-            c.save()
-            return send_file(pdf_path, as_attachment=True)
+    doc = documents_collection.find_one({"_id": ObjectId(document_id)})
+    if doc and doc.get("translated_text"):
+        translated_text = doc["translated_text"]
+        pdf_path = os.path.join(UPLOAD_FOLDER, f"translated_{document_id}.pdf")
+        c = canvas.Canvas(pdf_path, pagesize=letter)
+
+        # You can add font logic based on language here if needed
+        c.setFont("EnglishFont", 12)
+
+        lines = wrap(translated_text, width=80)
+        y = 750
+        for line in lines:
+            c.drawString(50, y, line)
+            y -= 20
+
+        c.save()
+        return send_file(pdf_path, as_attachment=True)
+
     return jsonify({"error": "Translated text not found"}), 404
 
+
+# ✅ Run Flask App
 if __name__ == "__main__":
     app.run(debug=True)
